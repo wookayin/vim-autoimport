@@ -1,7 +1,8 @@
 """vim_autoimport.managers.python"""
 
-from typing import Optional
+from typing import List, Optional
 from collections import namedtuple
+import pkgutil
 
 import vim
 
@@ -17,10 +18,36 @@ class PythonImportManager(AutoImportManager):
     """
 
     def __init__(self):
-        pass
+        if not DB:
+            _build_database()   # TODO: Add thread lock.
 
     def resolve_import(self, symbol: str) -> Optional[str]:
-        return DB.get(symbol, None)
+        # p.a.c.k.a.g.e.symbol -> if any ancestor package is known, import it
+        def _ancestor_packages(symbol_chain):
+            chain = symbol_chain.split('.')
+            for k in range(1, len(chain)):
+                yield '.'.join(chain[:-k])
+
+        # TODO: Implement ResolveStrategy classes for smarter resolution chain.
+        # (1) lookup the database as-is
+        if symbol in DB:
+            return next(iter((DB[symbol])))
+        for parent_package in _ancestor_packages(symbol):
+            if parent_package in DB:
+                return next(iter((DB[parent_package])))
+
+        # (2) pkgutil.iter_modules: get importable modules
+        importable_modules: List[str] = [
+            module_info.name for module_info in pkgutil.iter_modules()
+            if module_info.ispkg]
+
+        if symbol in importable_modules:
+            return 'import {}'.format(symbol)
+        for parent_package in _ancestor_packages(symbol):
+            if parent_package in importable_modules:
+                return 'import {}'.format(parent_package)
+
+        return None
 
     def is_import_statement(self, line: str):
         line = line.strip()
@@ -51,25 +78,61 @@ class PythonImportManager(AutoImportManager):
 
 
 # -----------------------------------------------------------------------------
-# Commonsense database of python imports
-# TODO: Make this list configurable by users.
-DB = {}
+# Commonsense database of python imports, determined by the current python
+# TODO: Make this list configurable and overridable by users.
 
-import typing
-for s in typing.__all__:
-    DB[s] = 'from typing import %s' % s
+import collections, importlib, fnmatch
+DB = collections.defaultdict(list)   # symbol -> import statement
 
-DB_MODULES_BUILTIN = ['re', 'os', 'sys',
-                      'importlib', 'pathlib', 'contextlib']
-DB_MODULES_COMMON = ['numpy', 'scipy', 'matplotlib']
+ALL = lambda pkg: importlib.import_module(pkg).__all__
+DIR = lambda pkg: [s for s in dir(importlib.import_module(pkg))
+                   if not s.startswith('_')]
+def PATTERN(*pats):
+    return (lambda pkg: [s for s in ALL(pkg) if
+                         any(fnmatch.fnmatch(s, pat) for pat in pats)])
 
-for s in DB_MODULES_BUILTIN + DB_MODULES_COMMON:
-    DB[s] = 'import ' + s
-
-DB_MODULES_AS = {
-    'numpy': 'np', 'pandas': 'pd', 'matplotlib.pyplot': 'plt'
+# common builtin modules: export (selective) symbols that are quite obvious
+# so could be imported directly (e.g. `from typing import Any`).
+# @see https://docs.python.org/3/py-modindex.html
+DB_MODULES_BUILTIN = {
+    'sys': None, 'os': None, 'os.path': None,
+    're': None, 'math': None, 'random': None,
+    'abc': ['ABC', 'ABCMeta', 'abstractclassmethod', 'abstractmethod',
+            'abstractproperty', 'abstractstaticmethod'],
+    'argparse': PATTERN('Argument*', '*Formatter'),
+    'collections': ALL,
+    'contextlib': ['contextmanager', 'nullcontext', 'closing'],
+    'copy': ['deepcopy'],
+    'enum': ['Enum', 'EnumMeta', 'Flag', 'IntEnum', 'IntFlag'],
+    'functools': ALL,
+    'glob': ['glob', 'iglob'],
+    'importlib': ALL,
+    'io': PATTERN('*IO*', 'Buffered*'),
+    'itertools': DIR,
+    'pathlib': ALL,
+    'pprint': ALL,
+    'typing': lambda pkg: filter(lambda s: s[0].isupper(), ALL(pkg))
 }
-for m, s in DB_MODULES_AS.items():
-    DB[s] = 'import {} as {}'.format(m, s)
 
-# -----------------------------------------------------------------------------
+DB_MODULES_IMPORT = ['numpy', 'scipy', 'scipy.misc', 'matplotlib']
+DB_MODULES_IMPORT_AS = {
+    'numpy': 'np', 'pandas': 'pd',
+    'matplotlib.pyplot': 'plt', 'matplotlib': 'mpl',
+}
+
+def _build_database():
+    for pkg, symbols in DB_MODULES_BUILTIN.items():
+        if callable(symbols):
+            try:
+                symbols = symbols(pkg)
+            except ImportError:
+                symbols = None
+        for s in (symbols or []):
+            DB[s].append('from {} import {}'.format(pkg, s))
+        DB[pkg].append('import ' + pkg)
+
+    for s in DB_MODULES_IMPORT:
+        DB[s].append('import ' + s)
+    for pkg, s in DB_MODULES_IMPORT_AS.items():
+        DB[s].append('import {} as {}'.format(pkg, s))
+    return DB
