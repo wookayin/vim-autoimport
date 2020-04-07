@@ -21,7 +21,12 @@ endif
 command! -nargs=0 ImportSymbol   call s:ImportSymbol()
 function s:ImportSymbol()
   let cexpr = expand("<cexpr>")
-  if !autoimport#import_symbol(cexpr)
-    echom printf("Cannot resolve import for `%s`", cexpr)
+  let l:ret = autoimport#import_symbol(cexpr)
+  if empty(l:ret)
+    echohl WarningMsg | echom printf("Cannot resolve import for `%s`", cexpr) | echohl None
+  elseif l:ret['line'] > 0
+    echohl Special | echom printf("Added to Line %d: %s", l:ret['line'], l:ret['statement']) | echohl None
+  else
+    echohl Normal | echom printf("Import for `%s` already exists, no changes", cexpr) | echohl None
   endif
 endfunction

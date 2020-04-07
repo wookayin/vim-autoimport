@@ -1,7 +1,7 @@
 """vim_autoimport.managers.manager"""
 
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
 
 import vim
@@ -38,13 +38,17 @@ class AutoImportManager(ABC):
         syntaxgroup = vim.call('synIDattr', synid, 'name')
         return syntaxgroup
 
-    def import_symbol(self, symbol: str) -> bool:
+    def import_symbol(self, symbol: str) -> Dict[str, Any]:
         '''Add an import statement for the given symbol.'''
         import_statement = self.resolve_import(symbol)
         if not import_statement:
-            return False
+            return {}
 
-        return self.add_import(import_statement)
+        line_nr: LineNumber = self.add_import(import_statement)
+        if line_nr > 0:
+            return {'statement': import_statement, 'line': line_nr}
+        else:  # already exists
+            return {'statement': None, 'line': 0}
 
     def add_import(self, import_statement: str) -> LineNumber:
         '''Add a raw import statement line to the current buffer,
