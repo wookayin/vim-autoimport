@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 
 import vim
 
+LineNumber = int
+
 
 class AutoImportManager(ABC):
 
@@ -24,15 +26,15 @@ class AutoImportManager(ABC):
         return False
 
     @abstractmethod
-    def determine_linenumber(self, import_statement: str) -> int:
-        '''Determines the line number (0-indexed) to place the import
+    def determine_linenumber(self, import_statement: str) -> LineNumber:
+        '''Determines the line number (1-indexed) to place the import
         statement for the current vim buffer.'''
         raise NotImplementedError
 
-    def get_syngroup_at_line(self, line_nr: int) -> str:
+    def get_syngroup_at_line(self, line_nr: LineNumber) -> str:
         '''Get the syntax group name for the given line (0-indexed)
         in the current buffer.'''
-        synid = vim.call('synID', line_nr + 1, 1, 1)
+        synid = vim.call('synID', line_nr, 1, 1)
         syntaxgroup = vim.call('synIDattr', synid, 'name')
         return syntaxgroup
 
@@ -44,44 +46,49 @@ class AutoImportManager(ABC):
 
         return self.add_import(import_statement)
 
-    def add_import(self, import_statement: str) -> bool:
-        '''Add a raw import statement to the current buffer,
-        at a proper location. Returns True iff the line was added.'''
+    def add_import(self, import_statement: str) -> LineNumber:
+        '''Add a raw import statement line to the current buffer,
+        at a proper location.
+
+        Returns the line number (1-indexed) at which the line was added,
+        or 0 if no change was made (e.g. there is a duplicate).
+        '''
         if not self.is_import_statement(import_statement):
             raise ValueError("Not a import statement: {}".format(import_statement))
 
         buf = vim.current.buffer
-        def getline(line_nr: int):
-            return buf[line_nr]
+        def getline(line_nr: LineNumber):
+            return buf[line_nr - 1]
+        def insertline(line_nr: LineNumber, line: str):
+            return vim.call('append', line_nr - 1, line)
 
         # TODO: need to determine the current symbol was imported or not (or
         # it can be existing alias, variables, etc.) being semantics-aware.
 
         # Prevent duplicated import lines.
-        if self.find_line(buf, import_statement) < 0:
-            line_nr: int = self.determine_linenumber(import_statement)
+        line_nr_existing = self.find_line(buf, import_statement)
+        if line_nr_existing:
+            return 0
 
-            #prevline: str = getline(line_nr - 1) if line_nr > 0 else ''
-            #if prevline and self.is_import_statement(prevline):
-            #    vim.call('append', line_nr, 'ABOVE')
-            #    line_nr += 1
-            vim.call('append', line_nr, import_statement.rstrip())
+        line_nr: LineNumber = self.determine_linenumber(import_statement)
+        insertline(line_nr, import_statement.rstrip())
 
-            # Insert reasonable blank lines below
-            # TODO: This behavior can be language-specific.
-            if line_nr + 1 < len(buf) and \
-                    not self.is_import_statement(getline(line_nr + 1)):
-                vim.call('append', line_nr + 1, '')
+        # Insert reasonable blank lines below
+        # TODO: This behavior can be language-specific.
+        if line_nr + 1 <= len(buf) and \
+                not self.is_import_statement(getline(line_nr + 1)):
+            insertline(line_nr + 1, '')
 
-        return True
+        return line_nr
 
-    def find_line(self, buf, line: str) -> int:
+    def find_line(self, buf, line: str) -> LineNumber:
         '''Search for the line in the buffer (to avoid duplicate imports),
         after stripping out comments.
-        Returns 0-indexed line number if found, or -1 if not found.'''
-        for i, bline in enumerate(buf):
+        Returns 1-indexed line number if found, or 0 if not found.'''
+        i: LineNumber
+        for i, bline in enumerate(buf, start=LineNumber(1)):
             if i > 100: break  # do not scan too many lines
             bline = re.sub(r"\s*#.*$", '', bline).rstrip()
             if bline == line:
                 return i
-        return -1
+        return 0

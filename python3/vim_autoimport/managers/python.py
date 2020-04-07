@@ -6,7 +6,7 @@ import pkgutil
 
 import vim
 
-from .manager import AutoImportManager
+from .manager import AutoImportManager, LineNumber
 
 
 class PythonImportManager(AutoImportManager):
@@ -59,12 +59,13 @@ class PythonImportManager(AutoImportManager):
         ['pythonString', 'pythonDocstring', 'pythonComment']
     )
 
-    def determine_linenumber(self, import_statement: str) -> int:
+    def determine_linenumber(self, import_statement: str) -> LineNumber:
         # TODO: Find a correct place for import,
         # being aware of docstrings, import statements, etc.
         buf = vim.current.buffer
 
-        for ln, bline in enumerate(buf, start=0):
+        ln: LineNumber
+        for ln, bline in enumerate(buf, start=LineNumber(1)):
             if ln > 100: break  # do not scan too many lines
 
             if bline == '':
@@ -74,7 +75,7 @@ class PythonImportManager(AutoImportManager):
             return ln
 
         # cannot resolve, put in the topmost line
-        return 0
+        return 1
 
 
 # -----------------------------------------------------------------------------
