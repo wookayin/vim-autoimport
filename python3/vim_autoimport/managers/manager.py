@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 
 import vim
 
-LineNumber = int
+LineNumber = int     # 1-indexed line number as integer.
 
 
 class AutoImportManager(ABC):

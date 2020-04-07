@@ -19,7 +19,7 @@ endif
 
 " Commands.
 command! -bar -nargs=* ImportSymbol   call s:ImportSymbol(<f-args>)
-function s:ImportSymbol(...)
+function s:ImportSymbol(...) abort
   if a:0 > 1
     echohl WarningMsg | echom "Usage: ImportSymbol [symbol]" | echohl None
     return

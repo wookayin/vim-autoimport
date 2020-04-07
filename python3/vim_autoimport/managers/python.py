@@ -60,13 +60,29 @@ class PythonImportManager(AutoImportManager):
     )
 
     def determine_linenumber(self, import_statement: str) -> LineNumber:
-        # TODO: Find a correct place for import,
-        # being aware of docstrings, import statements, etc.
+        # If there is another import statement for the same package as the
+        # given one, place nearby the import statement.
+        # Otherwise, find the first non-empty, non-comment line and place there.
         buf = vim.current.buffer
-
         ln: LineNumber
+        max_lines = 1000
+
+        tokens = import_statement.split()
+        if len(tokens) > 1:
+            pkg = tokens[1]  # import <pkg>, from <pkg> import ...
+            _line, _col = vim.call('line', '.'), vim.call('col', '.')
+            try:
+                vim.call('cursor', 1, 1)
+                ln = vim.call('search', r'\v^(from|import) {}'.format(pkg),
+                              'n', max_lines)
+                if ln:  # a line for similar module was found
+                    return ln
+            finally:
+                vim.call('cursor', _line, _col)
+
+        # find a non-empty line
         for ln, bline in enumerate(buf, start=LineNumber(1)):
-            if ln > 100: break  # do not scan too many lines
+            if ln > max_lines: break  # do not scan too many lines
 
             if bline == '':
                 continue
