@@ -38,8 +38,7 @@ class PythonImportManager(AutoImportManager):
 
         # (2) pkgutil.iter_modules: get importable modules
         importable_modules: List[str] = [
-            module_info.name for module_info in pkgutil.iter_modules()
-            if module_info.ispkg]
+            module_info.name for module_info in pkgutil.iter_modules()]
 
         if symbol in importable_modules:
             return 'import {}'.format(symbol)
