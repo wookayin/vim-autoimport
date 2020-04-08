@@ -9,11 +9,8 @@
 py3 import vim
 py3 import vim_autoimport
 
-if exists('v:false')
-  let s:false = v:false
-else
-  let s:false = 0
-endif
+if exists('v:false') | let s:false = v:false | else | let s:false = 0 | endif
+if exists('v:true')  | let s:true  = v:true  | else | let s:true  = 1 | endif
 
 
 function! autoimport#__version__() abort
@@ -23,7 +20,7 @@ endfunction
 
 function! autoimport#__reload__(...) abort
     " Reload backing python modules (useful for debugging)
-    let l:verbose = get(a:, 1, s:false)
+    let l:verbose = get(a:, 1, s:true)
     if l:verbose
       py3 vim_autoimport.__reload__(verbose=True)
     else
