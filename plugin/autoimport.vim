@@ -24,7 +24,7 @@ function s:ImportSymbol(...) abort
     echohl WarningMsg | echom "Usage: ImportSymbol [symbol]" | echohl None
     return
   endif
-  let l:query = get(a:, 1, expand("<cexpr>"))
+  let l:query = get(a:, 1, autoimport#utils#get_cexpr())
 
   let l:ret = autoimport#import_symbol(l:query)
   if empty(l:ret)
