@@ -1,12 +1,26 @@
 """vim_autoimport.managers.python"""
 
-from typing import List, Optional
+import abc
+from typing import Type, List, Optional
 from collections import namedtuple
 import pkgutil
 
 import vim
 
 from .manager import AutoImportManager, LineNumber
+
+
+ImportStatement = str
+
+
+class PythonImportResolveStrategy(abc.ABC):
+    """Strategy interface for AutoImportManager.resolve_import(). All instances
+    of its subclasses will be instantiated at each call of resolve_import()."""
+
+    @abc.abstractmethod
+    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+        del symbol
+        raise NotImplementedError
 
 
 class PythonImportManager(AutoImportManager):
@@ -21,34 +35,34 @@ class PythonImportManager(AutoImportManager):
         if not DB:
             _build_database()   # TODO: Add thread lock.
 
+    def create_strategies(self) -> List[PythonImportResolveStrategy]:
+        return [
+            DBLookupStrategy(),
+            ImportableModuleStrategy(),
+        ]
+
     def resolve_import(self, symbol: str) -> Optional[str]:
+        strategies = self.create_strategies()
+
         # p.a.c.k.a.g.e.symbol -> if any ancestor package is known, import it
-        def _ancestor_packages(symbol_chain):
+        def _ancestor_packages(symbol_chain: str):
+            yield symbol_chain  # itself first
+
             chain = symbol_chain.split('.')
             for k in range(1, len(chain)):
                 yield '.'.join(chain[:-k])
 
-        # TODO: Implement ResolveStrategy classes for smarter resolution chain.
-        # (1) lookup the database as-is
-        if symbol in DB:
-            return next(iter((DB[symbol])))
-        for parent_package in _ancestor_packages(symbol):
-            if parent_package in DB:
-                return next(iter((DB[parent_package])))
-
-        # (2) pkgutil.iter_modules: get importable modules
-        importable_modules: List[str] = [
-            module_info.name for module_info in pkgutil.iter_modules()]
-
-        if symbol in importable_modules:
-            return 'import {}'.format(symbol)
-        for parent_package in _ancestor_packages(symbol):
-            if parent_package in importable_modules:
-                return 'import {}'.format(parent_package)
-
+        # apply candidates (symbol itself and its all ancestors),
+        # and if any match is found by a strategy return it
+        for candidate_symbol in _ancestor_packages(symbol):
+            for strategy in strategies:
+                r: Optional[ImportStatement]
+                r = strategy(candidate_symbol)
+                if r:
+                    return str(r)
         return None
 
-    def is_import_statement(self, line: str):
+    def is_import_statement(self, line: str) -> bool:
         line = line.strip()
         if '\n' in line:
             return False
@@ -91,6 +105,28 @@ class PythonImportManager(AutoImportManager):
 
         # cannot resolve, put in the topmost line
         return 1
+
+
+class DBLookupStrategy(PythonImportResolveStrategy):
+    """Lookup the database as-is."""
+
+    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+        if symbol in DB:
+            return next(iter((DB[symbol])))
+        return None
+
+
+class ImportableModuleStrategy(PythonImportResolveStrategy):
+    """Use pkgutil.iter_modules to get importable modules."""
+
+    def __init__(self):
+        self.importable_modules: List[str] = [
+            module_info.name for module_info in pkgutil.iter_modules()]
+
+    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+        if symbol in self.importable_modules:
+            return 'import {}'.format(symbol)
+        return None
 
 
 # -----------------------------------------------------------------------------
