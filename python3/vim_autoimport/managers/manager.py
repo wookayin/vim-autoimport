@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 
 import vim
 
+from .utils import funcref
+
 LineNumber = int     # 1-indexed line number as integer.
 
 
@@ -34,8 +36,8 @@ class AutoImportManager(ABC):
     def get_syngroup_at_line(self, line_nr: LineNumber) -> str:
         '''Get the syntax group name for the given line (0-indexed)
         in the current buffer.'''
-        synid = vim.call('synID', line_nr, 1, 1)
-        syntaxgroup = vim.call('synIDattr', synid, 'name')
+        synid = funcref('synID')(line_nr, 1, 1)
+        syntaxgroup = funcref('synIDattr')(synid, 'name')
         return syntaxgroup
 
     def import_symbol(self, symbol: str) -> Dict[str, Any]:
@@ -64,7 +66,7 @@ class AutoImportManager(ABC):
         def getline(line_nr: LineNumber):
             return buf[line_nr - 1]
         def insertline(line_nr: LineNumber, line: str):
-            return vim.call('append', line_nr - 1, line)
+            return funcref('append')(line_nr - 1, line)
 
         # TODO: need to determine the current symbol was imported or not (or
         # it can be existing alias, variables, etc.) being semantics-aware.
