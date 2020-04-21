@@ -7,7 +7,7 @@ import pkgutil
 
 import vim
 
-from .utils import funcref
+from ..vim_utils import funcref
 from .manager import AutoImportManager, LineNumber
 
 
@@ -88,7 +88,7 @@ class PythonImportManager(AutoImportManager):
             try:
                 funcref('cursor')(1, 1)
                 ln = funcref('search')(r'\v^(from|import) {}'.format(pkg),
-                              'n', max_lines)
+                             'n', max_lines)
                 if ln:  # a line for similar module was found
                     return ln
             finally:

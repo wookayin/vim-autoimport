@@ -6,7 +6,8 @@ from abc import ABC, abstractmethod
 
 import vim
 
-from .utils import funcref
+from ..vim_utils import funcref
+
 
 LineNumber = int     # 1-indexed line number as integer.
 
