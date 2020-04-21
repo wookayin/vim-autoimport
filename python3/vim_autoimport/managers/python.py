@@ -7,6 +7,7 @@ import pkgutil
 
 import vim
 
+from ..vim_utils import funcref
 from .manager import AutoImportManager, LineNumber
 
 
@@ -83,15 +84,15 @@ class PythonImportManager(AutoImportManager):
         tokens = import_statement.split()
         if len(tokens) > 1:
             pkg = tokens[1]  # import <pkg>, from <pkg> import ...
-            _line, _col = vim.call('line', '.'), vim.call('col', '.')
+            _line, _col = funcref('line')('.'), funcref('col')('.')
             try:
-                vim.call('cursor', 1, 1)
-                ln = vim.call('search', r'\v^(from|import) {}'.format(pkg),
-                              'n', max_lines)
+                funcref('cursor')(1, 1)
+                ln = funcref('search')(r'\v^(from|import) {}'.format(pkg),
+                             'n', max_lines)
                 if ln:  # a line for similar module was found
                     return ln
             finally:
-                vim.call('cursor', _line, _col)
+                funcref('cursor')(_line, _col)
 
         # find a non-empty line
         for ln, bline in enumerate(buf, start=LineNumber(1)):
