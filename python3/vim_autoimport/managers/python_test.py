@@ -1,9 +1,6 @@
 import sys
 import pytest
 
-# mock vim module
-sys.modules['vim'] = type(sys)('vim')
-
 try:
     from blessed import Terminal
     term = Terminal()
