@@ -36,6 +36,8 @@ class PythonImportManager(AutoImportManager):
         if not DB:
             _build_database()   # TODO: Add thread lock.
 
+        self._strategies = self.create_strategies()
+
     def create_strategies(self) -> List[PythonImportResolveStrategy]:
         return [
             DBLookupStrategy(),
@@ -43,8 +45,6 @@ class PythonImportManager(AutoImportManager):
         ]
 
     def resolve_import(self, symbol: str) -> Optional[str]:
-        strategies = self.create_strategies()
-
         # p.a.c.k.a.g.e.symbol -> if any ancestor package is known, import it
         def _ancestor_packages(symbol_chain: str):
             yield symbol_chain  # itself first
@@ -56,7 +56,7 @@ class PythonImportManager(AutoImportManager):
         # apply candidates (symbol itself and its all ancestors),
         # and if any match is found by a strategy return it
         for candidate_symbol in _ancestor_packages(symbol):
-            for strategy in strategies:
+            for strategy in self._strategies:
                 r: Optional[ImportStatement]
                 r = strategy(candidate_symbol)
                 if r:
@@ -121,8 +121,9 @@ class ImportableModuleStrategy(PythonImportResolveStrategy):
     """Use pkgutil.iter_modules to get importable modules."""
 
     def __init__(self):
+        modules = list(pkgutil.iter_modules())
         self.importable_modules: List[str] = [
-            module_info.name for module_info in pkgutil.iter_modules()]
+            module_info.name for module_info in modules]
 
     def __call__(self, symbol: str) -> Optional[ImportStatement]:
         if symbol in self.importable_modules:

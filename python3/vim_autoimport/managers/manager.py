@@ -13,6 +13,7 @@ LineNumber = int     # 1-indexed line number as integer.
 
 
 class AutoImportManager(ABC):
+    # TODO: Define life-cycle or reusability of Manager classes.
 
     def __init__(self):
         pass
