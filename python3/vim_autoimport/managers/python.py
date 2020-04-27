@@ -1,7 +1,7 @@
 """vim_autoimport.managers.python"""
 
 import abc
-from typing import Type, List, Optional
+from typing import Type, List, Optional, Dict, Any
 from collections import namedtuple
 import pkgutil
 
@@ -138,7 +138,7 @@ class ImportableModuleStrategy(PythonImportResolveStrategy):
 import collections, importlib, fnmatch
 DB = collections.defaultdict(list)   # symbol -> import statement
 
-ALL = lambda pkg: importlib.import_module(pkg).__all__
+ALL = lambda pkg: importlib.import_module(pkg).__all__  # type: ignore
 DIR = lambda pkg: [s for s in dir(importlib.import_module(pkg))
                    if not s.startswith('_')]
 def PATTERN(*pats):
@@ -148,9 +148,34 @@ def PATTERN(*pats):
 # common builtin modules: export (selective) symbols that are quite obvious
 # so could be imported directly (e.g. `from typing import Any`).
 # @see https://docs.python.org/3/py-modindex.html
-DB_MODULES_BUILTIN = {
-    'sys': None, 'os': None, 'os.path': None,
-    're': None, 'math': None, 'random': None,
+DB_MODULES_BUILTIN: Dict[str, Any] = {}
+DB_MODULES_BUILTIN.update({mod: None for mod in (
+    # highest priority no matter what
+    'sys', 'os', 're', 'math', 'random',
+
+    # builtin module subpackages that are obvious or needs additional import
+    'collections.abc', 'concurrent.futures',
+    'curses.ascii', 'curses.panel', 'curses.textpad',
+    'encodings.idna', 'encodings.mbcs', 'encodings.utf_8_sig',
+    'html.entities', 'html.parser',
+    'http.client', 'http.cookiejar', 'http.cookies', 'http.server',
+    'importlib.abc', 'importlib.machinery', 'importlib.resources',
+    'importlib.util', 'multiprocessing.connection', 'multiprocessing.dummy',
+    'multiprocessing.managers', 'multiprocessing.pool',
+    'multiprocessing.shared_memory', 'multiprocessing.sharedctypes',
+    'os.path', 'json.tool', 'logging.config', 'logging.handlers',
+    'test.support', 'test.support.script_helper', 'unittest.mock',
+    'urllib.error', 'urllib.parse', 'urllib.request',
+    'urllib.response', 'urllib.robotparser',
+    'xml.dom', 'xml.etree', 'xml.etree.ElementTree',
+    'xml.parsers',
+
+    # builtin, but not visible from pkgutil
+    'time', 'atexit', 'builtins', 'errno', 'faulthandler', 'gc',
+    'marshal', 'posix', 'zipimport',
+)})
+DB_MODULES_BUILTIN.update({
+    # common functions/classes (from ... import ...)
     'abc': ['ABC', 'ABCMeta', 'abstractclassmethod', 'abstractmethod',
             'abstractproperty', 'abstractstaticmethod'],
     'argparse': PATTERN('Argument*', '*Formatter'),
@@ -165,8 +190,8 @@ DB_MODULES_BUILTIN = {
     'itertools': DIR,
     'pathlib': ALL,
     'pprint': ALL,
-    'typing': lambda pkg: filter(lambda s: s[0].isupper(), ALL(pkg))
-}
+    'typing': lambda pkg: filter(lambda s: s[0].isupper(), ALL(pkg)),
+})
 
 DB_MODULES_IMPORT = ['numpy', 'scipy', 'scipy.misc', 'matplotlib']
 DB_MODULES_IMPORT_AS = {
