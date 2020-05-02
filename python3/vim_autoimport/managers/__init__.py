@@ -1,18 +1,36 @@
 import vim
-from typing import Optional
+from typing import Optional, Dict
 
 from .manager import AutoImportManager
 
 
+# A cache for singleton manager instances (one per filetype)
+INSTANCES: Dict[str, AutoImportManager] = {}
+
+
 def get_manager(filetype: Optional[str] = None,
                 ) -> AutoImportManager:
+    """Get a AutoImportManager instance for the current or specified filetype.
+
+    If a manager instance for the same filetype was created before, the same
+    instance will be retrieved (i.e., singleton).
+    """
     if filetype is None:
         filetype = vim.eval('&filetype')
 
-    # TODO: should reuse the cached instance per filetype (should be the case)
-    # or re-create manager instances every time?
+    if not filetype:
+        raise ValueError("Unknown filetype.")
+
+    # TODO: use a thread lock.
+    manager = INSTANCES.get(filetype, None)
+    if manager is not None:
+        return manager
+
     if filetype == 'python':
         from .python import PythonImportManager
-        return PythonImportManager()
+        manager = PythonImportManager()
     else:
-        raise NotImplementedError
+        raise NotImplementedError("Sorry, currently only python is supported.")
+
+    INSTANCES[filetype] = manager
+    return manager
