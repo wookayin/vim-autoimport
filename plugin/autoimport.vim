@@ -32,6 +32,6 @@ function s:ImportSymbol(...) abort
   elseif l:ret['line'] > 0
     echohl Special | echom printf("Added to Line %d: %s", l:ret['line'], l:ret['statement']) | echohl None
   else
-    echohl Normal | echom printf("Import for `%s` already exists, no changes", l:query) | echohl None
+    echohl Normal | echom printf("Import `%s` already exists, no changes", l:ret['statement']) | echohl None
   endif
 endfunction

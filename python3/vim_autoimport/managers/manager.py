@@ -52,7 +52,7 @@ class AutoImportManager(ABC):
         if line_nr > 0:
             return {'statement': import_statement, 'line': line_nr}
         else:  # already exists
-            return {'statement': None, 'line': 0}
+            return {'statement': import_statement, 'line': 0}
 
     def add_import(self, import_statement: str) -> LineNumber:
         '''Add a raw import statement line to the current buffer,
