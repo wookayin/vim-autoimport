@@ -1,3 +1,10 @@
+" Utilities.
+
+function! autoimport#utils#echomsg(msg, hlgroup) abort
+  if !empty(a:hlgroup) | exec 'echohl ' . a:hlgroup | endif
+  echom a:msg
+  if !empty(a:hlgroup) | echohl NONE | endif
+endfunction
 
 function! autoimport#utils#get_cexpr() abort
   " Get a expression or symbol under cursor.  Similar to expand("<cexpr>"),
