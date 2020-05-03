@@ -1,13 +1,20 @@
 """vim_autoimport.managers.python"""
 
+import sys
+import asyncio
+import os
 import abc
-from typing import Type, List, Optional, Dict, Any
-from collections import namedtuple
 import pkgutil
+from typing import Type, List, Optional, Dict, Any
+from collections import defaultdict
+from collections import namedtuple
+from distutils.spawn import find_executable
 
 import vim
 
+from ..vim_utils import echomsg
 from ..vim_utils import funcref
+from .. import vim_utils
 from .manager import AutoImportManager, LineNumber
 
 
@@ -22,6 +29,10 @@ class PythonImportResolveStrategy(abc.ABC):
     def __call__(self, symbol: str) -> Optional[ImportStatement]:
         del symbol
         raise NotImplementedError
+
+
+class StrategyNotReadyError(RuntimeError):
+    pass
 
 
 class PythonImportManager(AutoImportManager):
@@ -39,10 +50,12 @@ class PythonImportManager(AutoImportManager):
         self._strategies = self.create_strategies()
 
     def create_strategies(self) -> List[PythonImportResolveStrategy]:
-        return [
+        strategies = [
             DBLookupStrategy(),
             ImportableModuleStrategy(),
+            SitePackagesCTagsStrategy() if find_executable("ctags") else None,
         ]
+        return [s for s in strategies if s]
 
     def resolve_import(self, symbol: str) -> Optional[str]:
         # p.a.c.k.a.g.e.symbol -> if any ancestor package is known, import it
@@ -58,7 +71,10 @@ class PythonImportManager(AutoImportManager):
         for candidate_symbol in _ancestor_packages(symbol):
             for strategy in self._strategies:
                 r: Optional[ImportStatement]
-                r = strategy(candidate_symbol)
+                try:
+                    r = strategy(candidate_symbol)
+                except StrategyNotReadyError:
+                    pass # TODO log
                 if r:
                     return str(r)
         return None
@@ -129,6 +145,108 @@ class ImportableModuleStrategy(PythonImportResolveStrategy):
         if symbol in self.importable_modules:
             return 'import {}'.format(symbol)
         return None
+
+
+class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
+    # TODO: It cannot import "exported" symbols, e.g. tf.Module
+    # or aliased package names (e.g. _pytest).
+
+    def __init__(self, is_async=True):
+        # Work around a bug https://bugs.python.org/issue35621 where
+        # create_subprocess_shell() does not work with neovim's eventloop
+        _w = asyncio.get_child_watcher()
+        if _w._loop is None:
+            _w.attach_loop(asyncio.get_event_loop())
+
+        if not is_async:
+            # block until database is built.
+            asyncio.get_event_loop().run_until_complete(
+                self._build_database())
+        else:
+            # build index from ctags in background without blocking UI.
+            self._future = asyncio.ensure_future(self._build_database())
+
+    async def _build_database(self) -> None:
+        try:
+            stdout = await self._run_ctags()
+            self._tags = await self._create_database_from_stream(stdout)
+            echomsg("[vim-autoimport] Indexing of site-packages is complete.",
+                    hlgroup='MoreMsg')
+        except Exception as e:
+            # TODO: Handle exception when ctags is not available.
+            echomsg("[vim-autoimport] Error while running ctags: {}\n".format(e),
+                    hlgroup='Error')
+            vim_utils.print_exception(*sys.exc_info())
+
+    async def _run_ctags(self) -> asyncio.StreamReader:
+        from distutils.sysconfig import get_python_lib
+        python_lib_dir = get_python_lib()
+
+        # Note: exuberant-ctags ignores python-kinds,  TODO: add warning!
+        # so universal-ctags is highly recommended (much faster).
+        cmd = ("ctags -f - --languages=python --python-kinds=-vm "
+               "--exclude='test_*' --exclude='*_test' -R .")
+        proc = await asyncio.create_subprocess_shell(
+            cmd, cwd=python_lib_dir, limit=10 * 1024 * 1024,  # 10MB
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL)
+        return proc.stdout
+
+    async def _create_database_from_stream(self, reader) -> Dict[str, str]:
+        tags = defaultdict(list)
+        async for line in reader:
+            line = line.strip()
+            if isinstance(line, bytes):
+                line = line.decode("utf-8", errors='ignore')
+            if line.startswith('!'):
+                continue
+            symbol, filename, preview, tagtype = line.split('\t')[:4]
+            if not tagtype in ('c', 'f'):
+                continue
+            # convert filename to full.named.package
+            package: str = os.path.splitext(filename)[0].replace("/", ".")
+            package_parent, _, package_rmost = package.rpartition('.')
+            if (package_rmost.startswith('test_') or
+                package_rmost.endswith('_test')):
+                continue
+            tags[symbol].append(package)
+            # index the module itself as well
+            tags[package].append('')
+            tags[package_rmost].append(package_parent)
+
+        # remove duplicates
+        for key, lst in tags.items():
+            if len(lst) > 1:
+                tags[key] = list(sorted(set(lst)))
+
+        return tags
+
+    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+        if not hasattr(self, '_tags'):
+            raise StrategyNotReadyError("ctags database hasn't been built")
+
+        if symbol not in self._tags:
+            return None
+
+        def represent(package):
+            if package:
+                return "from {} import {}".format(package, symbol)
+            else:
+                return "import {}".format(symbol)
+
+        # If multiple entries, ask user to choose one
+        candidates = self._tags[symbol]
+        if len(self._tags[symbol]) > 1:
+            candidates = [represent(c) for c in candidates]
+            rv = vim_utils.ask_user(candidates)
+            if not rv:
+                return None      # aborted, no import added
+            idx = rv - 1
+        else:
+            idx = 0
+
+        package = self._tags[symbol][idx]
+        return represent(package)
 
 
 # -----------------------------------------------------------------------------

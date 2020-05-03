@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 import pytest
@@ -27,13 +28,15 @@ def testDatabase():
     print("Time for _build_database(): %.3f sec" % (t1 - t0))
 
 
+
 # All builtin modules for python3: https://docs.python.org/3/py-modindex.html
 with open(Path(__file__).parent.joinpath("../../../test/python_builtins.txt")) as f:
     BUILTIN_MODULES = [l for l in f.read().strip().split('\n')
                        if not l.startswith('#')]
 
-@pytest.mark.timeout(1.0)
-def testImportResolve():
+
+@pytest.mark.timeout(0.5)
+def testImportResolveBasic(ctags_fixture):
     from vim_autoimport.managers.python import PythonImportManager
     manager = PythonImportManager()
     print("[testImportResolve]")
@@ -89,6 +92,79 @@ def testImportResolve():
     assert resolve("_this_is_unknown") == None
     assert resolve("_unknown.prefix.sys") == None
 
+
+@pytest.fixture
+def ctags_fixture(mocker):
+    """A fixture mocking ctags output for SitePackagesCTagsStrategy."""
+    from vim_autoimport.managers.python import SitePackagesCTagsStrategy
+    async def ctags_mock():
+        # full ctags is slow; mock ctags output line by line.
+        yield '!This is a comment line -- should be ignored'
+        yield '\t'.join(['MyConstant', 'package1/constants.py', '/^MyConstant = 1', 'v'])
+        yield '\t'.join(['SomeClass', 'lib2/models/some_class.py', '/^class SomeClass', 'c'])
+        yield '\t'.join(['foo', 'lib2/tests/test_foo.py', '/^def foo()', 'f'])
+        yield '\t'.join(['bar', 'lib2/tests/bar_test.py', '/^def bar()', 'f'])
+    def wrap_as_future(obj):
+        f = asyncio.Future()
+        f.set_result(obj)
+        return f
+    mocker.patch.object(SitePackagesCTagsStrategy, '_run_ctags',
+                        side_effect=lambda: wrap_as_future(ctags_mock()))
+
+
+
+@pytest.mark.timeout(1.0)
+def testSitePackagesCTags(ctags_fixture):
+    from vim_autoimport.managers.python import SitePackagesCTagsStrategy
+    from vim_autoimport.managers.python import PythonImportManager
+    manager = PythonImportManager()
+
+    # let's see what is included in the built database
+    strategy = [s for s in manager._strategies
+                if isinstance(s, SitePackagesCTagsStrategy)][0]
+    asyncio.get_event_loop().run_until_complete(strategy._future)
+
+    print("Length =", len(strategy._tags))
+    assert strategy._tags, "Tags not built?"
+    print("--" * 50)
+    for k, v in sorted(strategy._tags.items()):
+        print(NORMAL, "%-40s" % k, NORMAL, " -> ", YELLOW, str(v), NORMAL, sep='')
+    print("--" * 50)
+
+    # now run some import test cases ...
+    def resolve(symbol):
+        r = manager.resolve_import(symbol)
+        print(' ', YELLOW, "%-40s" % symbol, NORMAL, " -> ",
+              GREEN if r else '', r, NORMAL, sep='')
+        return r
+
+    assert resolve("MyConstant") is None, "constant should not be indexed"
+    assert resolve("SomeClass") == \
+        "from lib2.models.some_class import SomeClass"
+    assert resolve("some_class") == \
+        "from lib2.models import some_class"
+    assert resolve("lib2.models.some_class.SomeClass") == \
+        "import lib2.models.some_class"
+    assert resolve("lib2.models.some_class.AnotherClass") == \
+        "import lib2.models.some_class"
+    assert resolve("foo") is None, "test files should not be indexed"
+    assert resolve("bar") is None, "test files should not be indexed"
+
+
+@pytest.mark.timeout(10.0)
+@pytest.mark.skip(reason="slow test")
+def testSitePackagesCTagsReal(mocker):
+    from vim_autoimport.managers.python import PythonImportManager
+    from vim_autoimport.managers.python import SitePackagesCTagsStrategy
+    manager = PythonImportManager()
+
+    strategy = [s for s in manager._strategies
+                if isinstance(s, SitePackagesCTagsStrategy)][0]
+    asyncio.get_event_loop().run_until_complete(strategy._future)
+
+    tags = strategy._tags
+    print("len(tags) = ", len(tags))
+    assert tags
 
 if __name__ == '__main__':
     pytest.main(["-s", "-v"] + sys.argv)

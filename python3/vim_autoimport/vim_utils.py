@@ -4,6 +4,7 @@ import vim
 import sys
 import functools
 import traceback
+from typing import Optional
 
 
 def funcref_nvim(name: str):
@@ -57,3 +58,19 @@ def print_exception(etype, value, tb, limit=None, chain=True):
     stacktrace = '\n'.join(e).split('\n')
     for line in stacktrace:
         echomsg(line.rstrip(), hlgroup='WarningMsg')
+
+
+def ask_user(items) -> Optional[int]:
+    """Ask user to select one of the list (numbered 1 through N)."""
+    items = ["[%2d] " % i + item
+             for i, item in enumerate(items, start=1)]
+    try:
+        rv = vim.eval("inputlist(%s)" % items)    # TODO: escape properly
+        vim.command('echo " "')
+        rv = int(rv) if (rv and rv != "0") else None
+        return rv
+    except Exception as e:
+        if isinstance(e, KeyboardInterrupt) or str(e) == "Keyboard interrupt":
+            rv = None        # user abort
+        else:
+            raise
