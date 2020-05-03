@@ -6,7 +6,8 @@ import os
 import abc
 import pkgutil
 import functools
-from typing import Type, List, Optional, Dict, Any
+import sysconfig
+from typing import Type, List, Optional, Dict, Any, Iterable, Tuple
 from collections import defaultdict
 from collections import namedtuple
 from distutils.spawn import find_executable
@@ -91,9 +92,16 @@ class PythonImportManager(AutoImportManager):
         strategies = [
             DBLookupStrategy(),
             ImportableModuleStrategy(),
+            BuiltinCTagsStrategy() if find_executable("ctags") else None,
             SitePackagesCTagsStrategy() if find_executable("ctags") else None,
         ]
         return [s for s in strategies if s]
+
+    async def wait_until_strategies_ready(self):
+        """Wait until all async strategies complete their loading."""
+        for s in self._strategies:
+            if hasattr(s, '_future') and asyncio.isfuture(s._future):
+                await s._future
 
     def resolve_import(self, symbol: str) -> Optional[str]:
         # p.a.c.k.a.g.e.symbol -> if any ancestor package is known, import it
@@ -163,11 +171,24 @@ class PythonImportManager(AutoImportManager):
         # cannot resolve, put in the topmost line
         return 1
 
-    def list_all(self):
-        s = self._strategies[-1]
-        if not hasattr(s, '_tags'):
-            raise StrategyNotReadyError("ctags database hasn't been built")
-        return s._tags.items()
+    def list_all(self) -> Iterable[Tuple[str, List[Any]]]:
+        maps = []
+        for strategy in self._strategies:
+            if not isinstance(strategy, CTagsStrategy):
+                continue
+            if not hasattr(strategy, '_tags'):
+                # TODO: can we return a partial list and later refresh it?
+                raise StrategyNotReadyError("ctags database hasn't been built")
+            maps.append(strategy._tags)
+
+        # TODO: Using ChainMap causes a weird bug where the former defaultdict
+        # would create an unwanted entry with keys that exist in the latter.
+        # We simply workaround this using copy. But why is that happening?
+        #return list(collections.ChainMap(*maps).items())
+        M = {}
+        for m in maps[::-1]:
+           M.update(m)
+        return M.items()
 
 
 class DBLookupStrategy(PythonImportResolveStrategy):
@@ -193,10 +214,9 @@ class ImportableModuleStrategy(PythonImportResolveStrategy):
         return None
 
 
-class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
+class CTagsStrategy(PythonImportResolveStrategy):
     # TODO: It cannot import "exported" symbols, e.g. tf.Module
     # or aliased package names (e.g. _pytest).
-
     def __init__(self, is_async=True):
         # Work around a bug https://bugs.python.org/issue35621 where
         # create_subprocess_shell() does not work with neovim's eventloop
@@ -216,26 +236,32 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
         try:
             stdout = await self._run_ctags()
             self._tags = await self._create_database_from_stream(stdout)
-            echomsg("[vim-autoimport] Indexing of site-packages is complete.",
-                    hlgroup='MoreMsg')
+            echomsg("[vim-autoimport] Indexing {} is complete.".format(
+                self.lib_directory), hlgroup='MoreMsg')
         except Exception as e:
             # TODO: Handle exception when ctags is not available.
+            # TODO: If exception happens, mark as failure rather than not-ready
             echomsg("[vim-autoimport] Error while running ctags: {}\n".format(e),
                     hlgroup='Error')
             vim_utils.print_exception(*sys.exc_info())
 
-    async def _run_ctags(self) -> asyncio.StreamReader:
-        from distutils.sysconfig import get_python_lib
-        python_lib_dir = get_python_lib()
+    ctags_options = ''
 
+    @property
+    def lib_directory(self):
+        raise NotImplementedError   # subclass must override it.
+
+    async def _run_ctags(self) -> asyncio.StreamReader:
         # Note: exuberant-ctags ignores python-kinds,  TODO: add warning!
         # so universal-ctags is highly recommended (much faster).
         cmd = ("ctags -f - --languages=python --python-kinds=-vm "
-               "--exclude='test_*' --exclude='*_test' -R .")
+               "--exclude='test_*' --exclude='*_test' "
+               "{} -R .".format(self.ctags_options))
         proc = await asyncio.create_subprocess_shell(
-            cmd, cwd=python_lib_dir, limit=10 * 1024 * 1024,  # 10MB
+            cmd, cwd=self.lib_directory, limit=10 * 1024 * 1024,  # 10MB
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL)
+        assert proc.stdout is not None
         return proc.stdout
 
     async def _create_database_from_stream(self, reader,
@@ -289,25 +315,29 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
         if symbol not in self._tags:
             return None
 
-        def represent(package):
-            if package:
-                return "from {} import {}".format(package, symbol)
-            else:
-                return "import {}".format(symbol)
-
         # If multiple entries, ask user to choose one
         candidates: List[PyImport] = self._tags[symbol]
         if len(self._tags[symbol]) > 1:
-            candidates = [str(c) for c in candidates]
-            rv = vim_utils.ask_user(candidates)
+            rv = vim_utils.ask_user([str(c) for c in candidates])
             if not rv:
                 return None      # aborted, no import added
             idx = rv - 1
-        else:
+        elif len(self._tags[symbol]) == 1:
             idx = 0
+        else:
+            assert False, "tags cannot be empty! (symbol = {})".format(symbol)
 
         package = self._tags[symbol][idx]
         return package
+
+
+class BuiltinCTagsStrategy(CTagsStrategy):
+    lib_directory = sysconfig.get_paths()['stdlib']
+    ctags_options = '--exclude="site-packages"'
+
+
+class SitePackagesCTagsStrategy(CTagsStrategy):
+    lib_directory = sysconfig.get_paths()['purelib']  # site-packages
 
 
 # -----------------------------------------------------------------------------
@@ -315,7 +345,7 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
 # TODO: Make this list configurable and overridable by users.
 
 import collections, importlib, fnmatch
-DB = collections.defaultdict(list)   # symbol -> import statement
+DB: Dict[str, List[PyImport]] = collections.defaultdict(list)
 
 ALL = lambda pkg: importlib.import_module(pkg).__all__  # type: ignore
 DIR = lambda pkg: [s for s in dir(importlib.import_module(pkg))

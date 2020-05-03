@@ -14,6 +14,12 @@ except:
     YELLOW = GREEN = CYAN = NORMAL = ''
 
 
+def _wrap_as_future(obj):
+    f = asyncio.Future()
+    f.set_result(obj)
+    return f
+
+
 def testPyImport():
     from vim_autoimport.managers.python import PyImport
     assert str(PyImport("tensorflow")) == "import tensorflow"
@@ -117,7 +123,7 @@ def testImportResolveBasic(ctags_fixture):
 @pytest.fixture
 def ctags_fixture(mocker):
     """A fixture mocking ctags output for SitePackagesCTagsStrategy."""
-    from vim_autoimport.managers.python import SitePackagesCTagsStrategy
+    from vim_autoimport.managers.python import CTagsStrategy
     async def ctags_mock():
         """full ctags is slow; mock ctags output line by line."""
         yield '!This is a comment line -- should be ignored'
@@ -130,12 +136,8 @@ def ctags_fixture(mocker):
         # duplicates from different modules
         yield '\t'.join(['John', 'names/Lennon.py', '/^class John', 'c'])
         yield '\t'.join(['John', 'names/Doe.py', '/^class John', 'c'])
-    def wrap_as_future(obj):
-        f = asyncio.Future()
-        f.set_result(obj)
-        return f
-    mocker.patch.object(SitePackagesCTagsStrategy, '_run_ctags',
-                        side_effect=lambda: wrap_as_future(ctags_mock()))
+    mocker.patch.object(CTagsStrategy, '_run_ctags',
+                        side_effect=lambda: _wrap_as_future(ctags_mock()))
 
 
 
@@ -194,13 +196,13 @@ def testSitePackagesCTags(ctags_fixture, mocker):
 @pytest.mark.timeout(10.0)
 @pytest.mark.skipif('not config.getvalue("all")',
                     reason="Do not run slow tests unless --all was specified")
-def testSitePackagesCTagsReal():
+def testCTagsReal():
     from vim_autoimport.managers.python import PythonImportManager
-    from vim_autoimport.managers.python import SitePackagesCTagsStrategy
+    from vim_autoimport.managers.python import CTagsStrategy
     manager = PythonImportManager()
 
     strategies = [s for s in manager._strategies
-                  if isinstance(s, SitePackagesCTagsStrategy)]
+                  if isinstance(s, CTagsStrategy)]
     print("")
 
     for strategy in strategies:
@@ -218,6 +220,34 @@ def testSitePackagesCTagsReal():
         # do more check?
         assert '__init__' not in tags, \
             "__init__ should not exist\n:" + "\n".join(str(v) for v in tags['__init__'])
+
+
+@pytest.mark.timeout(1.0)
+@pytest.mark.skipif('not config.getvalue("all")',
+                    reason="Do not run slow tests unless --all was specified")
+def testListAndSuggest(mocker):
+    from vim_autoimport.managers.python import PythonImportManager
+    from vim_autoimport.managers.python import SitePackagesCTagsStrategy
+    async def null_ctags():
+        yield ''  # yield an empty line, disable site-packages strategy
+    mocker.patch.object(SitePackagesCTagsStrategy, '_run_ctags',
+                        side_effect=lambda: _wrap_as_future(null_ctags()))
+    manager = PythonImportManager()
+
+    # await manager
+    asyncio.get_event_loop().run_until_complete(manager.wait_until_strategies_ready())
+
+    assert len(manager._strategies[2]._tags) > 5000   # builtin strategy?
+    assert len(manager.list_all()) > 0
+
+    assert set(manager.suggest("datetime")['datetime']) == set([
+        'import datetime',
+        'from datetime import datetime',
+    ])
+    assert set(manager.suggest("urlencode")['urlencode']) == set([
+        'from urllib.parse import urlencode',
+    ])
+    assert list(manager.suggest('c', max_items=1).keys()).__len__() == 1
 
 
 if __name__ == '__main__':
