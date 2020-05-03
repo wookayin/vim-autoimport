@@ -1,0 +1,33 @@
+{
+  "name": "vim-autoimport",
+  "version": "0.1.0",
+  "description": "vim-autoimport",
+  "scripts": {},
+  "main": "src/coc_source.js",
+  "engines": {
+    "coc": ">=0.0.73"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wookayin/vim-autoimport"
+  },
+  "keywords": [
+    "coc.nvim",
+    "autoimport"
+  ],
+  "activationEvents": [
+    "*"
+  ],
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "properties": {
+      }
+    }
+  },
+  "author": "wookayin@gmail.com",
+  "license": "MIT",
+  "devDependencies": {
+    "coc.nvim": ">=0.0.73"
+  }
+}

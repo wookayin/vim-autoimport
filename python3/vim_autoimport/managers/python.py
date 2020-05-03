@@ -123,6 +123,12 @@ class PythonImportManager(AutoImportManager):
         # cannot resolve, put in the topmost line
         return 1
 
+    def list_all(self):
+        s = self._strategies[-1]
+        if not hasattr(s, '_tags'):
+            return []
+        return s._tags.items()
+
 
 class DBLookupStrategy(PythonImportResolveStrategy):
     """Lookup the database as-is."""

@@ -1,7 +1,8 @@
 """vim_autoimport.managers.manager"""
 
+import itertools
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Tuple, Iterable
 from abc import ABC, abstractmethod
 
 import vim
@@ -100,3 +101,12 @@ class AutoImportManager(ABC):
             if bline == line:
                 return i
         return 0
+
+    def list_all(self) -> Iterable[Tuple[str, List[str]]]:
+        return []
+
+    def suggest(self, query='', max_items=50) -> Dict[str, List[str]]:
+        # TODO: we need some proper ranking and fuzzy search.
+        items = ((k, v) for (k, v) in self.list_all()
+                 if k.startswith(query))
+        return dict(itertools.islice(items, 0, max_items))
