@@ -1,6 +1,8 @@
 import asyncio
 import sys
+import itertools
 from pathlib import Path
+
 import pytest
 
 try:
@@ -190,19 +192,33 @@ def testSitePackagesCTags(ctags_fixture, mocker):
 
 
 @pytest.mark.timeout(10.0)
-@pytest.mark.skip(reason="slow test")
-def testSitePackagesCTagsReal(mocker):
+@pytest.mark.skipif('not config.getvalue("all")',
+                    reason="Do not run slow tests unless --all was specified")
+def testSitePackagesCTagsReal():
     from vim_autoimport.managers.python import PythonImportManager
     from vim_autoimport.managers.python import SitePackagesCTagsStrategy
     manager = PythonImportManager()
 
-    strategy = [s for s in manager._strategies
-                if isinstance(s, SitePackagesCTagsStrategy)][0]
-    asyncio.get_event_loop().run_until_complete(strategy._future)
+    strategies = [s for s in manager._strategies
+                  if isinstance(s, SitePackagesCTagsStrategy)]
+    print("")
 
-    tags = strategy._tags
-    print("len(tags) = ", len(tags))
-    assert tags
+    for strategy in strategies:
+        # await ctag is done
+        asyncio.get_event_loop().run_until_complete(strategy._future)
+
+        tags = strategy._tags
+        print(GREEN, "{}, len(tags) = {}".format(
+            type(strategy).__name__, len(tags)), NORMAL, sep='')
+        for k, v in itertools.islice(tags.items(), 0, 20):
+            print(YELLOW, "  %-40s" % k, NORMAL, list(map(str, v)), sep='')
+        print(YELLOW, '  ...', NORMAL, sep='')
+        assert tags
+
+        # do more check?
+        assert '__init__' not in tags, \
+            "__init__ should not exist\n:" + "\n".join(str(v) for v in tags['__init__'])
+
 
 if __name__ == '__main__':
     pytest.main(["-s", "-v"] + sys.argv)

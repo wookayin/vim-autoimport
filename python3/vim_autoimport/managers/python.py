@@ -245,24 +245,35 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
             line = line.strip()
             if isinstance(line, bytes):
                 line = line.decode("utf-8", errors='ignore')
-            if line.startswith('!'):
+            if not line or line.startswith('!'):
                 continue
-            symbol, filename, preview, tagtype = line.split('\t')[:4]
+            columns = line.split('\t')
+            if len(columns) >= 5:
+                continue  # local (inner) class or function, do not index it
+            symbol, filename, preview, tagtype = columns[:4]
             if not tagtype in ('c', 'f'):
-                continue
+                continue  # only accepts class or function
+            if symbol == '__init__':
+                continue  # overriding __init__, etc.
+
             # convert filename to full.named.package
             package: str = os.path.splitext(filename)[0].replace("/", ".")
             package_parent, _, package_rmost = package.rpartition('.')
             if (package_rmost.startswith('test_') or
                 package_rmost.endswith('_test')):
-                continue
+                continue  # exclude test suites
+            if package_rmost == '__init__':
+                package = package[:-9]  # package.__init__ -> package
+                package_parent, _, package_rmost = package.rpartition('.')
+
             tags[symbol].append(PyImport(package=package, symbol=symbol))
             # index the module itself as well
             tags[package].append(PyImport(package=package))
-            tags[package_rmost].append(
-                PyImport(package=package_parent, symbol=package_rmost))
-            tags[package_rmost + '.' + symbol].append(
-                PyImport(package=package_parent, symbol=package_rmost))
+            if package_parent:
+                tags[package_rmost].append(
+                    PyImport(package=package_parent, symbol=package_rmost))
+                tags[package_rmost + '.' + symbol].append(
+                    PyImport(package=package_parent, symbol=package_rmost))
 
         # remove duplicates
         for key, lst in tags.items():
