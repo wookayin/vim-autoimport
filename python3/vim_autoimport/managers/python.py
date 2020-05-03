@@ -5,6 +5,7 @@ import asyncio
 import os
 import abc
 import pkgutil
+import functools
 from typing import Type, List, Optional, Dict, Any
 from collections import defaultdict
 from collections import namedtuple
@@ -21,12 +22,49 @@ from .manager import AutoImportManager, LineNumber
 ImportStatement = str
 
 
+@functools.total_ordering
+class PyImport:
+    package: str
+    symbol: Optional[str]
+    alias: Optional[str]
+    __slots__ = ('package', 'symbol', 'alias')
+
+    def __init__(self, package: str, symbol: Optional[str] = None,
+                 alias: Optional[str] = None):
+        self.package = package
+        self.symbol = symbol
+        self.alias = alias
+
+    def __lt__(self, other):
+        return (self.package, self.symbol or '', self.alias or '') < \
+            (other.package, other.symbol or '', other.alias or '')
+
+    def __eq__(self, other):
+        return (self.package, self.symbol or '', self.alias or '') == \
+            (other.package, other.symbol or '', other.alias or '')
+
+    def __hash__(self):
+        return hash((self.package, self.symbol or '', self.alias or ''))
+
+    def __str__(self):
+        if self.symbol:
+            s = "from {} import {}".format(self.package, self.symbol)
+        else:
+            s = "import {}".format(self.package)
+        if self.alias:
+            s += " as {}".format(self.alias)
+        return s
+
+    def __repr__(self):
+        return 'PyImport("{}")'.format(str(self))
+
+
 class PythonImportResolveStrategy(abc.ABC):
     """Strategy interface for AutoImportManager.resolve_import(). All instances
     of its subclasses will be instantiated at each call of resolve_import()."""
 
     @abc.abstractmethod
-    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+    def __call__(self, symbol: str) -> Optional[PyImport]:
         del symbol
         raise NotImplementedError
 
@@ -70,12 +108,14 @@ class PythonImportManager(AutoImportManager):
         # and if any match is found by a strategy return it
         for candidate_symbol in _ancestor_packages(symbol):
             for strategy in self._strategies:
-                r: Optional[ImportStatement]
+                r: Optional[PyImport]
                 try:
                     r = strategy(candidate_symbol)
                 except StrategyNotReadyError:
                     pass # TODO log
                 if r:
+                    assert isinstance(r, PyImport), (
+                        "Wrong type given by %s : %s" % (strategy, type(r)))
                     return str(r)
         return None
 
@@ -126,14 +166,14 @@ class PythonImportManager(AutoImportManager):
     def list_all(self):
         s = self._strategies[-1]
         if not hasattr(s, '_tags'):
-            return []
+            raise StrategyNotReadyError("ctags database hasn't been built")
         return s._tags.items()
 
 
 class DBLookupStrategy(PythonImportResolveStrategy):
     """Lookup the database as-is."""
 
-    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+    def __call__(self, symbol: str) -> Optional[PyImport]:
         if symbol in DB:
             return next(iter((DB[symbol])))
         return None
@@ -147,9 +187,9 @@ class ImportableModuleStrategy(PythonImportResolveStrategy):
         self.importable_modules: List[str] = [
             module_info.name for module_info in modules]
 
-    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+    def __call__(self, symbol: str) -> Optional[PyImport]:
         if symbol in self.importable_modules:
-            return 'import {}'.format(symbol)
+            return PyImport(package=symbol)  # import {symbol}
         return None
 
 
@@ -198,7 +238,8 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
             stderr=asyncio.subprocess.DEVNULL)
         return proc.stdout
 
-    async def _create_database_from_stream(self, reader) -> Dict[str, str]:
+    async def _create_database_from_stream(self, reader,
+                                           ) -> Dict[str, List[PyImport]]:
         tags = defaultdict(list)
         async for line in reader:
             line = line.strip()
@@ -215,10 +256,13 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
             if (package_rmost.startswith('test_') or
                 package_rmost.endswith('_test')):
                 continue
-            tags[symbol].append(package)
+            tags[symbol].append(PyImport(package=package, symbol=symbol))
             # index the module itself as well
-            tags[package].append('')
-            tags[package_rmost].append(package_parent)
+            tags[package].append(PyImport(package=package))
+            tags[package_rmost].append(
+                PyImport(package=package_parent, symbol=package_rmost))
+            tags[package_rmost + '.' + symbol].append(
+                PyImport(package=package_parent, symbol=package_rmost))
 
         # remove duplicates
         for key, lst in tags.items():
@@ -227,7 +271,7 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
 
         return tags
 
-    def __call__(self, symbol: str) -> Optional[ImportStatement]:
+    def __call__(self, symbol: str) -> Optional[PyImport]:
         if not hasattr(self, '_tags'):
             raise StrategyNotReadyError("ctags database hasn't been built")
 
@@ -241,9 +285,9 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
                 return "import {}".format(symbol)
 
         # If multiple entries, ask user to choose one
-        candidates = self._tags[symbol]
+        candidates: List[PyImport] = self._tags[symbol]
         if len(self._tags[symbol]) > 1:
-            candidates = [represent(c) for c in candidates]
+            candidates = [str(c) for c in candidates]
             rv = vim_utils.ask_user(candidates)
             if not rv:
                 return None      # aborted, no import added
@@ -252,7 +296,7 @@ class SitePackagesCTagsStrategy(PythonImportResolveStrategy):
             idx = 0
 
         package = self._tags[symbol][idx]
-        return represent(package)
+        return package
 
 
 # -----------------------------------------------------------------------------
@@ -331,11 +375,15 @@ def _build_database():
             except ImportError:
                 symbols = None
         for s in (symbols or []):
-            DB[s].append('from {} import {}'.format(pkg, s))
-        DB[pkg].append('import ' + pkg)
+            # from {pkg} import {s}
+            DB[s].append(PyImport(package=pkg, symbol=s))
+        # import {pkg}
+        DB[pkg].append(PyImport(package=pkg))
 
     for s in DB_MODULES_IMPORT:
-        DB[s].append('import ' + s)
+        # import {s}
+        DB[s].append(PyImport(package=s))
     for pkg, s in DB_MODULES_IMPORT_AS.items():
-        DB[s].append('import {} as {}'.format(pkg, s))
+        # import {pkg} as {s}
+        DB[s].append(PyImport(package=pkg, alias=s))
     return DB

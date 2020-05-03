@@ -102,11 +102,11 @@ class AutoImportManager(ABC):
                 return i
         return 0
 
-    def list_all(self) -> Iterable[Tuple[str, List[str]]]:
+    def list_all(self) -> Iterable[Tuple[str, List[Any]]]:
         return []
 
     def suggest(self, query='', max_items=50) -> Dict[str, List[str]]:
         # TODO: we need some proper ranking and fuzzy search.
-        items = ((k, v) for (k, v) in self.list_all()
+        items = ((k, list(map(str, v))) for (k, v) in self.list_all()
                  if k.startswith(query))
         return dict(itertools.islice(items, 0, max_items))
