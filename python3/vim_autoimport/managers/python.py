@@ -89,11 +89,13 @@ class PythonImportManager(AutoImportManager):
         self._strategies = self.create_strategies()
 
     def create_strategies(self) -> List[PythonImportResolveStrategy]:
+        # ctags requires asyncio, which does not work on vim8.
+        enable_ctags = vim_utils.is_neovim and find_executable("ctags")
         strategies = [
             DBLookupStrategy(),
             ImportableModuleStrategy(),
-            BuiltinCTagsStrategy() if find_executable("ctags") else None,
-            SitePackagesCTagsStrategy() if find_executable("ctags") else None,
+            BuiltinCTagsStrategy() if enable_ctags else None,
+            SitePackagesCTagsStrategy() if enable_ctags else None,
         ]
         return [s for s in strategies if s]
 
@@ -116,7 +118,7 @@ class PythonImportManager(AutoImportManager):
         # and if any match is found by a strategy return it
         for candidate_symbol in _ancestor_packages(symbol):
             for strategy in self._strategies:
-                r: Optional[PyImport]
+                r: Optional[PyImport] = None
                 try:
                     r = strategy(candidate_symbol)
                 except StrategyNotReadyError:
@@ -134,7 +136,8 @@ class PythonImportManager(AutoImportManager):
         return line.startswith('from ') or line.startswith('import ')
 
     AVOID_SYNGROUPS = set(
-        ['pythonString', 'pythonDocstring', 'pythonComment']
+        ['pythonString', 'pythonDocstring', 'pythonComment',
+         'pythonTSString']
     )
 
     def determine_linenumber(self, import_statement: str) -> LineNumber:
@@ -172,6 +175,8 @@ class PythonImportManager(AutoImportManager):
         return 1
 
     def list_all(self) -> Iterable[Tuple[str, List[Any]]]:
+        """Enumerate all symbols from internal strategies."""
+        # TODO: Support ImportableModuleStrategy just in case ctags is unavailable.
         maps = []
         for strategy in self._strategies:
             if not isinstance(strategy, CTagsStrategy):

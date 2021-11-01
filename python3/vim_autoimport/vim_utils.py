@@ -7,6 +7,10 @@ import traceback
 from typing import Optional
 
 
+# Whether the python host is neovim or vanilla vim.
+is_neovim = hasattr(vim, '__module__')
+
+
 def funcref_nvim(name: str):
     '''Wrap a nvim function.'''
     return functools.partial(vim.call, name)

@@ -41,6 +41,8 @@ class AutoImportManager(ABC):
         in the current buffer.'''
         synid = funcref('synID')(line_nr, 1, 1)
         syntaxgroup = funcref('synIDattr')(synid, 'name')
+
+        # Does not support dynamic hl groups (semshi, treesitter)
         return syntaxgroup
 
     def import_symbol(self, symbol: str) -> Dict[str, Any]:

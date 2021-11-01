@@ -28,6 +28,11 @@ exports.activate = async (context) => {
         logger.error(e);
       }
     }
+    if (!cache) {
+      // Exception happened during suggest(...), e.g., when strategy is not ready.
+      // Do nothing without errors (no results yet) to not fill in the cache yet
+      return {};
+    }
     return cache;
   };
 
