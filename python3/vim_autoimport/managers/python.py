@@ -347,7 +347,7 @@ class SitePackagesCTagsStrategy(CTagsStrategy):
 
 # -----------------------------------------------------------------------------
 # Commonsense database of python imports, determined by the current python
-# TODO: Make this list configurable and overridable by users.
+# TODO: Make this list overridable by users.
 
 import collections, importlib, fnmatch
 DB: Dict[str, List[PyImport]] = collections.defaultdict(list)
@@ -432,4 +432,18 @@ def _build_database():
     for pkg, s in DB_MODULES_IMPORT_AS.items():
         # import {pkg} as {s}
         DB[s].append(PyImport(package=pkg, alias=s))
+
+    user_db_as = vim.eval("get(g:, 'autoimport#python#db_import_as', {})")
+    for pkg, s in user_db_as.items():
+        # import {pkg} as {s}
+        DB[s].append(PyImport(package=pkg, alias=s))
+
+    user_db = vim.eval("get(g:, 'autoimport#python#db_import', {})")
+    for pkg, symbols in user_db.items():
+        for s in (symbols or []):
+            # from {pkg} import {s}
+            DB[s].append(PyImport(package=pkg, symbol=s))
+        # import {pkg}
+        DB[pkg].append(PyImport(package=pkg))
+
     return DB
