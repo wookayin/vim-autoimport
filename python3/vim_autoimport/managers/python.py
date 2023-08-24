@@ -383,6 +383,7 @@ DB_MODULES_BUILTIN.update({mod: None for mod in (
     # builtin, but not visible from pkgutil
     'time', 'atexit', 'builtins', 'errno', 'faulthandler', 'gc',
     'marshal', 'posix', 'zipimport',
+    'binhex', 'dummy_threading', 'formatter', 'parser', 'symbol',
 )})
 DB_MODULES_BUILTIN.update({
     # common functions/classes (from ... import ...)
