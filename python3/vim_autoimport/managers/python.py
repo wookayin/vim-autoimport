@@ -17,7 +17,7 @@ import vim
 from ..vim_utils import echomsg
 from ..vim_utils import funcref
 from .. import vim_utils
-from .manager import AutoImportManager, LineNumber
+from .manager import AutoImportManager, LineNumber, StrategyNotReadyError
 
 
 ImportStatement = str
@@ -68,10 +68,6 @@ class PythonImportResolveStrategy(abc.ABC):
     def __call__(self, symbol: str) -> Optional[PyImport]:
         del symbol
         raise NotImplementedError
-
-
-class StrategyNotReadyError(RuntimeError):
-    pass
 
 
 class PythonImportManager(AutoImportManager):

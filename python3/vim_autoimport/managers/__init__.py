@@ -1,7 +1,8 @@
 import vim
 from typing import Optional, Dict
 
-from .manager import AutoImportManager
+from .manager import AutoImportManager as AutoImportManager
+from .manager import StrategyNotReadyError as StrategyNotReadyError
 
 
 # A cache for singleton manager instances (one per filetype)

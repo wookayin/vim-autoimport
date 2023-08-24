@@ -13,6 +13,10 @@ from ..vim_utils import funcref
 LineNumber = int     # 1-indexed line number as integer.
 
 
+class StrategyNotReadyError(RuntimeError):
+    pass
+
+
 class AutoImportManager(ABC):
     # TODO: Define life-cycle or reusability of Manager classes.
 
@@ -108,7 +112,10 @@ class AutoImportManager(ABC):
         return []
 
     def suggest(self, query='', max_items=50) -> Dict[str, List[str]]:
-        # TODO: we need some proper ranking and fuzzy search.
-        items = ((k, list(map(str, v))) for (k, v) in self.list_all()
-                 if k.startswith(query))
-        return dict(itertools.islice(items, 0, max_items))
+        try:
+            # TODO: we need some proper ranking and fuzzy search.
+            items = ((k, list(map(str, v))) for (k, v) in self.list_all()
+                    if k.startswith(query))
+            return dict(itertools.islice(items, 0, max_items))
+        except StrategyNotReadyError:
+            return {}
