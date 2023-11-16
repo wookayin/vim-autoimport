@@ -393,6 +393,7 @@ DB_MODULES_BUILTIN.update({
     'collections': ALL,
     'contextlib': ['contextmanager', 'nullcontext', 'closing'],
     'copy': ['deepcopy'],
+    'dataclasses': ['dataclass', 'field', 'fields', 'asdict', 'astuple', 'is_dataclass', 'make_dataclass'],
     'enum': ['Enum', 'EnumMeta', 'Flag', 'IntEnum', 'IntFlag'],
     'functools': ALL,
     'glob': ['glob', 'iglob'],
@@ -402,9 +403,18 @@ DB_MODULES_BUILTIN.update({
     'pathlib': ALL,
     'pprint': ALL,
     'typing': lambda pkg: filter(lambda s: s[0].isupper(), ALL(pkg)),
+
+    # Not builtin, but common
+    'torch': ['nn'],
 })
 
-DB_MODULES_IMPORT = ['numpy', 'scipy', 'scipy.misc', 'matplotlib']
+DB_MODULES_IMPORT = [
+    'numpy',
+    'scipy',
+    'scipy.misc',
+    'matplotlib',
+    'torch',
+]
 DB_MODULES_IMPORT_AS = {
     'numpy': 'np', 'pandas': 'pd',
     'matplotlib.pyplot': 'plt', 'matplotlib': 'mpl',
