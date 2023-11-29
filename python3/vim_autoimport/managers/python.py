@@ -406,6 +406,7 @@ DB_MODULES_BUILTIN.update({
 
     # Not builtin, but common
     'torch': ['nn'],
+    'PIL': ['Image', 'ImageDraw', 'ImageFont', 'ImageOps'],
 })
 
 DB_MODULES_IMPORT = [
