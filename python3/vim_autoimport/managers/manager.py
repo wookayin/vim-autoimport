@@ -2,12 +2,13 @@
 
 import itertools
 import re
+from typing import Set
 from typing import Any, Dict, Optional, List, Tuple, Iterable
 from abc import ABC, abstractmethod
 
 import vim
 
-from ..vim_utils import funcref
+from ..vim_utils import funcref, is_treesitter_supported
 
 
 LineNumber = int     # 1-indexed line number as integer.
@@ -40,14 +41,25 @@ class AutoImportManager(ABC):
         statement for the current vim buffer.'''
         raise NotImplementedError
 
-    def get_syngroup_at_line(self, line_nr: LineNumber) -> str:
-        '''Get the syntax group name for the given line (0-indexed)
-        in the current buffer.'''
-        synid = funcref('synID')(line_nr, 1, 1)
-        syntaxgroup = funcref('synIDattr')(synid, 'name')
+    def _get_hlgroups_at_line(self, line_nr: LineNumber) -> Set[str]:
+        '''Get all the names of syntax groups in the given line (1-indexed),
+        for the current buffer.'''
 
-        # Does not support dynamic hl groups (semshi, treesitter)
-        return syntaxgroup
+        # Vanilla vim syntax
+        synid = funcref('synID')(line_nr, 1, 1)  # lnum, col, trans
+        syntaxgroup = funcref('synIDattr')(synid, 'name')
+        if syntaxgroup:
+            return set([syntaxgroup])
+
+        # treesitter (requires nvim 0.9.0+)
+        if is_treesitter_supported:
+            # treesitter hlgroups are prefixed with '@' like a capture
+            captures = vim.lua.vim.treesitter.get_captures_at_pos(0, line_nr - 1, 0)
+            if captures:
+                return set('@' + t['capture'] for t in captures)
+
+        # TODO: Support non-treesitter extmark highlights (e.g. semshi)
+        return set()  # not found
 
     def import_symbol(self, symbol: str) -> Dict[str, Any]:
         '''Add an import statement for the given symbol.'''

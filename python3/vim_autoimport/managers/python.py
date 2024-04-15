@@ -133,7 +133,7 @@ class PythonImportManager(AutoImportManager):
 
     AVOID_SYNGROUPS = set(
         ['pythonString', 'pythonDocstring', 'pythonComment',
-         'pythonTSString']
+         '@comment', '@string.documentation']
     )
 
     def determine_linenumber(self, import_statement: str) -> LineNumber:
@@ -158,12 +158,14 @@ class PythonImportManager(AutoImportManager):
                 funcref('cursor')(_line, _col)
 
         # find a non-empty line
+        bline: str
         for ln, bline in enumerate(buf, start=LineNumber(1)):
-            if ln > max_lines: break  # do not scan too many lines
+            if ln > max_lines:
+                break  # do not scan too many lines
 
             if bline == '':
                 continue
-            if self.get_syngroup_at_line(ln) in self.AVOID_SYNGROUPS:
+            if self._get_hlgroups_at_line(ln) & self.AVOID_SYNGROUPS:
                 continue
             return ln
 

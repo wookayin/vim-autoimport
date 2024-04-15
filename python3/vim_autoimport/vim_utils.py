@@ -8,7 +8,10 @@ from typing import Optional
 
 
 # Whether the python host is neovim or vanilla vim.
-is_neovim = hasattr(vim, '__module__')
+is_neovim: bool = hasattr(vim, '__module__')
+
+# Whether has neovim 0.9.0+.
+is_treesitter_supported: bool = is_neovim and vim.funcs.has('nvim-0.9') > 0
 
 
 def funcref_nvim(name: str):
