@@ -1,24 +1,21 @@
 """vim_autoimport.managers.python"""
 
-import sys
-import asyncio
-import os
 import abc
-import pkgutil
+import asyncio
 import functools
+import os
+import pkgutil
+import shutil
+import sys
 import sysconfig
-from typing import Type, List, Optional, Dict, Any, Iterable, Tuple
-from collections import defaultdict
-from collections import namedtuple
-from distutils.spawn import find_executable
+from collections import defaultdict, namedtuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Type
 
 import vim
 
-from ..vim_utils import echomsg
-from ..vim_utils import funcref
 from .. import vim_utils
+from ..vim_utils import echomsg, funcref
 from .manager import AutoImportManager, LineNumber, StrategyNotReadyError
-
 
 ImportStatement = str
 
@@ -86,7 +83,7 @@ class PythonImportManager(AutoImportManager):
 
     def create_strategies(self) -> List[PythonImportResolveStrategy]:
         # ctags requires asyncio, which does not work on vim8.
-        enable_ctags = vim_utils.is_neovim and find_executable("ctags")
+        enable_ctags = vim_utils.is_neovim and shutil.which("ctags")
         strategies = [
             DBLookupStrategy(),
             ImportableModuleStrategy(),
