@@ -220,9 +220,10 @@ class CTagsStrategy(PythonImportResolveStrategy):
     def __init__(self, is_async=True):
         # Work around a bug https://bugs.python.org/issue35621 where
         # create_subprocess_shell() does not work with neovim's eventloop
-        _w = asyncio.get_child_watcher()
-        if getattr(_w, '_loop', None) is None:
-            _w.attach_loop(asyncio.get_event_loop())
+        if hasattr(asyncio, 'get_child_watcher'):  # Python <3.14
+            _w = asyncio.get_child_watcher()
+            if getattr(_w, '_loop', None) is None:
+                _w.attach_loop(asyncio.get_event_loop())
 
         if not is_async:
             # block until database is built.
